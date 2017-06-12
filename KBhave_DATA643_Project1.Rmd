@@ -1,0 +1,548 @@
+---
+title: "IceCreamRS"
+author: "Kumudini Bhave"
+date: "June 7, 2017"
+output:
+  html_document:
+    fontsize: 17pt
+    highlight: pygments
+    theme: cerulean
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+---
+
+     
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+*******
+
+# **Recommending New Cool Flavors For The Hot Season !!**
+
+********
+
+## Summary
+
+
+This is an R Markdown document for providing documentation for performing analysis of customer ratings and favourites to recommend the new / untried flavors.
+
+To facilitate the testing our baseline recommendation we will be randomly dividing the icecream data into a training set that contains around 80% of the data and a test set that contains 20% of the data.
+
+
+     
+
+```{r warning=FALSE, comment=FALSE, message=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=150)}
+knitr::opts_chunk$set(message = FALSE, echo=TRUE)
+
+# To load survey data from googlesheets
+library(googlesheets)
+# Library for loading CSV data
+library(RCurl)
+# Library for data tidying
+library(tidyr)
+# Library for data structure operations 
+library(dplyr)
+library(knitr)
+# Library for plotting
+library(ggplot2)
+# Library for data display in tabular format
+library(DT)
+library(pander)
+
+
+
+```
+
+### Loading The IceCream Survey Data
+
+The YumYum IceCream  Shop has created a survey for the regular kids to rate their flavors.
+
+Here is the survey link:
+
+https://docs.google.com/forms/d/e/1FAIpQLSeWvKMD8LiQOkBzJPB-4Sf_50rFYXLw5mVib7iMQCvin2GqxA/viewform
+
+The responses from survey can be found here :
+
+https://docs.google.com/spreadsheets/d/116wSRMzuGezXb7SBZRZV9Zre_LQmuE1yTDgaWRmPzq8/edit?usp=sharing
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+# Loading data from googlesheets, first finding the relevant sheet , reading the sheet and relevant worksheet
+
+gs_ls()
+icedata.url <- gs_title("YumYumIceCream")
+icedata.csv <- gs_read_csv(ss=icedata.url, ws = "Form Responses 1")
+
+# convert to data.frame
+icedata <- as.data.frame(icedata.csv)
+
+
+# Verifying records and variables
+
+nrow(icedata)
+ncol(icedata)
+
+#datatable(icedata)
+
+```
+
+*********
+
+### Data Cleansing 
+
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+
+icedataorig <- icedata
+icedata<-icedata %>% select( -Timestamp, -Name)
+colnames(icedata) <- c("NuttyBtrSc","BlkForest","Rainbow","Casata","Choco","StrawBerry","Coconut")
+rownames(icedata) <- icedataorig$Name
+
+#library(recommenderlab)
+library(dplyr)
+
+
+# creating test and traing dataset by randomly excluding some of the rating items from icedata
+
+temptrainice<- icedata
+
+temptestice <- data.frame(matrix(NA, nrow = nrow(icedata), ncol = ncol(icedata)))
+colnames(temptestice) <- colnames(icedata)
+rownames(temptestice) <- rownames(icedata)
+
+
+
+
+set.seed(101)
+
+for( i in seq(1,7))
+{
+     xr <- sample(seq_len(nrow(icedata)),1, replace=FALSE)
+     xc <- sample(seq_len(ncol(icedata)),1,replace=FALSE)
+     #cat("\n xr " , xr," xc " , xc)
+     temptestice[xr,xc] <- icedata[xr,xc]
+     temptrainice[xr,xc] <- NA
+}
+
+
+trainnew <- temptrainice
+testnew <-  temptestice
+
+# Not sure, if this way of partitioning data into training and test should be ok when we need  bias for each user and each item.
+# IS there a sampling method, that would take samples randomly but ensuring each user/item are included.??
+
+#randomobs <- sample(seq_len(nrow(icedata)), size = floor(0.8 * nrow(icedata)))
+#trainnew <- icedata[randomobs,]
+#testnew <- icedata[-randomobs,]
+
+```
+
+
+********
+
+
+### IceCream Survey Data   {.tabset}
+
+#### Original IceCream Survey Data
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+pander(icedata)
+```
+
+#### Training Set
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+pander(trainnew)
+```
+
+#### Test Set
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+pander(testnew)
+
+
+```
+
+*********
+
+### Metrics  {.tabset}
+
+#### Calculating Raw Average
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+# Function to calculate Raw Average
+     
+rawavg <- function(ds){ 
+     nr <- nrow(ds)
+     nc <- ncol(ds)
+     
+     tot <- 0
+     cnt <- 0
+     for(i in seq(1,nr))  # for each row
+     {
+          for(j in seq(1,nc))
+          {
+               if (!(is.na(ds[i,j])))
+               {
+               #     cat("\nelem : ", ds[i,j],"\n")
+                    tot <- tot + ds[i,j]
+                    cnt <- cnt + 1    
+               }
+          }
+     }
+
+     # cat("\nTable Tot : ", tot,"\n")
+     # cat("Table Cnt : ","\n",cnt,"\n") 
+
+     return (tot /cnt)
+
+}
+
+
+rawav <- rawavg(trainnew)
+rawav
+
+```
+
+The raw average is `r rawav`
+
+
+#### Calculate Root Mean Squared Error (RMSE)
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+# Function to calculate Root Mean Square Error (RMSE)
+     
+
+calcrmse <- function(ds, ravg){ 
+     
+     nr <- nrow(ds)
+     nc <- ncol(ds)
+     
+     tot <- 0
+     cnt <- 0
+     for(i in seq(1,nr))  # for each row
+     {
+          for(j in seq(1,nc))
+          {
+               if (!(is.na(ds[i,j])))
+               {
+               #     cat("\nelem : ", ds[i,j],"\n")
+                    diff <- ds[i,j] - ravg
+                    
+                    tot <- tot + diff^2
+                    cnt <- cnt + 1    
+               }
+          }
+     }
+
+     # cat("\nTable Tot : ", tot,"\n")
+     # cat("Table Cnt : ","\n",cnt,"\n") 
+
+     mse <- tot / cnt
+     rmse <- sqrt(mse)
+     
+     return (rmse)
+
+}
+
+# RMSE for train data
+rmse_train <- calcrmse(trainnew, rawav)
+rmse_train
+# RMSE for test data
+rmse_test <-  calcrmse(testnew, rawav)
+rmse_test
+
+
+```
+The RMSE for training set is `r rmse_train` and RMSE for test set is `r rmse_test`
+We find very little difference is the RMSE for training and test sets. 
+
+
+*********
+
+### Calculate Bias  
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+# Function to calculate bias for child and flavor
+     
+
+calcbias <- function(ds, ravg){ 
+     
+     ds <-trainnew
+
+      nr <- nrow(ds)
+     nc <- ncol(ds)
+     
+     tot <- 0
+     cnt <- 0
+     
+     
+     # Finding bias for the child
+       childavgrate <-rowMeans(ds[,c(1:7)], na.rm=TRUE)
+       childbias <- childavgrate - ravg
+      
+     # Finding bias for the icecrea flavor       
+       iceavgrate <- colMeans(ds[,c(1:7)], na.rm = TRUE)
+       icebias <- iceavgrate - ravg
+       
+       
+     # Forming bias table for child and icecream flavor
+ 
+       childtab <- data.frame(cbind(row.names(ds),as.numeric(childavgrate),as.numeric(childbias)),stringsAsFactors = FALSE)
+       colnames(childtab) <- c("childname", "avgrate", "bias")
+       
+       
+       icetab <- data.frame(cbind(colnames(ds),as.numeric(iceavgrate), as.numeric(icebias)), stringsAsFactors = FALSE)
+       colnames(icetab) <- c("flavor", "avgrate", "bias")
+
+     # return list of dataframe and bias tables
+       
+     return(list(ds= ds,childtab = childtab, icetab = icetab))
+          
+} 
+     
+
+ listbias <- calcbias(trainnew, rawav)
+ 
+``` 
+
+
+********
+
+### Bias Tables {.tabset}
+
+#### Child Bias Table
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+ pander(listbias$childtab, caption = "Child Bias Table")
+```
+
+#### IceCream Bias Table
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+  pander(listbias$icetab, caption="IceCream Bias Table")
+
+```
+
+
+
+******
+
+### Calculate Baseline Predictions
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+# Function to calculate Baseline Predictor for each child-flavor combination
+
+
+
+calcbaselinepred <- function(ds){ 
+     
+     # initialize the new baseline dataframe
+     citab <- data.frame(matrix(NA, nrow = nrow(icedata), ncol = ncol(icedata)))
+     
+     # Fetch raw average for the passed dataset
+     rawav<- rawavg(trainnew)
+     rawav
+
+     # Fetch bias for user and item for the dataset
+     lbias <- calcbias(trainnew, rawav)
+     chtab <- lbias$childtab
+     ictab <- lbias$icetab
+     chtab
+     ictab
+     
+     
+     
+     # Iterate through user and item bias dataframes to find baseline for each user-item combination
+
+     for(c in seq(1,nrow(chtab)))
+     {
+          for(i in seq(1,nrow(ictab)))
+          {
+                          
+           #    cat("\n chtab[c,3]   :", c , "   ",as.numeric(chtab[c,]$bias) ,"  ictab[i,3] ", i , "   ", as.numeric(ictab[i,]$bias))
+             
+                bline <- rawav + as.numeric(chtab[c,]$bias) + as.numeric(ictab[i,]$bias)
+                
+                if(bline < 1) 
+                {
+                    bline <- 1
+                }
+                else if(bline > 5)
+                {
+                    bline <- 5
+                }
+                
+                citab[c,i] <- bline 
+          }     
+       
+     }
+     
+     colnames(citab) <- ictab$flavor
+     rownames(citab) <- chtab$childname
+     return (citab = citab)
+}
+
+```
+
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+childicecreambaseline <- calcbaselinepred(trainnew)
+
+```
+
+The baseline predictors are presented in the comparison with training and test sets below in RMSE section.
+
+*******
+
+### Calculate RMSE For Baseline Prediction  {.tabset}
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+
+# Function to calculate Root Mean Square Error (RMSE)
+     
+
+calcbaselinermse <- function(ds, dsbaseline){ 
+     
+     # the dimensions of both dataframes are similar
+     
+     nr <- nrow(ds)
+     nc <- ncol(ds)
+     
+     tot <- 0
+     cnt <- 0
+     
+     for(i in seq(1,nr))  # for each row
+     {
+          for(j in seq(1,nc))
+          {
+               if (!(is.na(ds[i,j])))
+               {
+               #     cat("\nelem : ", ds[i,j],"\n")
+                    diff <- ds[i,j] - dsbaseline[i,j]
+                    
+                    tot <- tot + diff^2
+                    cnt <- cnt + 1    
+               }
+          }
+     }
+
+     
+
+     # cat("\nTable Tot : ", tot,"\n")
+     # cat("Table Cnt : ","\n",cnt,"\n") 
+
+     msebaseline <- tot / cnt
+     rmsebaseline <- sqrt(msebaseline)
+     
+     return (rmsebaseline)
+}
+
+```
+
+#### Training Set Vs Baseline Prediction
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+par(mfrow=c(1,2))
+pander(trainnew)
+pander(childicecreambaseline)
+
+# RMSE for train data
+rmsebaseline_train <- calcbaselinermse(trainnew, childicecreambaseline)
+rmsebaseline_train
+
+```
+
+#### Test Set Vs Baseline Prediction
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+par(mfrow=c(1,2))
+pander(testnew)
+pander(childicecreambaseline)
+
+# RMSE for test data
+rmsebaseline_test <-  calcbaselinermse(testnew, childicecreambaseline)
+rmsebaseline_test
+
+
+```
+
+
+
+********
+
+
+### Summarization
+
+We find an improvement in the RMSE in training as well as the test sets with the baseline predictions method. Hence it offers a better recommendation option.
+
+We see the improvements as follows.
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+train_impr <-  1 - rmsebaseline_train / rmse_train
+train_impr
+
+test_impr <-  1 - rmsebaseline_test / rmse_test
+test_impr
+
+
+```
+
+The % improvement of RMSE by baseline prediction method as comapred to previous calculated RMSE for training set `r train_impr * 100` %
+
+
+The % improvement of RMSE by baseline prediction method as comapred to previous calculated RMSE for test set `r test_impr * 100` %
+
+We find that there is more or less equivalent improvement in the RMSE for both test and training set with the baseline prediction
+
+******
+
+
+### YumYum Icecream Recommends !
+
+![](https://raw.githubusercontent.com/DataDriven-MSDA/DATA643/master/YumYumPlaceLogo.jpg)
+![](https://raw.githubusercontent.com/DataDriven-MSDA/DATA643/master/ub.jpg)
+
+- Choco flavors to Molly and Adi, They are surely going to like it ! We are only hoping they will like the Coconut flavor though .
+
+- As for Tom, he may be ok for TuttiFruiti , but as we know he loves cake icecream he should surely go for Casata !
+
+- Pinky loves most  of icecreams and we feel she will like the TuttiFruiti Rainbow at least above average
+
+- Dino is picky and he doesn't seem to like cake icecreams, we feel he will like the Strawberry Flavour as he likes plain ones more. We hope so.!
+
+- Peter is more into single flavours as comapred to cake icecreams , but he hasnt tried the nutty ones, we hope he likes it about average at most the ButterScotch and TuttiFruiti, as he is not as much picky.
+
+- Dolly is all for icecreams and we are eager for her to grab the BlackForest cake icecream 'coz we know she will enjoy it!
+
+
+
+
+*******
