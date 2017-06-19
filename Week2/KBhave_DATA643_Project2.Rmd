@@ -1,0 +1,485 @@
+---
+title: "IceCreamRS_CollabFilter"
+author: "Kumudini Bhave"
+date: "June 15, 2017"
+output:
+  html_document:
+    fontsize: 17pt
+    highlight: pygments
+    theme: cerulean
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+---
+
+     
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+*******
+
+# **Special IceCream For A Special You  !!**
+
+********
+
+## Summary
+
+
+This is an R Markdown document for providing documentation for performing analysis of icecream ratings by little kids and to recommend the new / untried flavors to them this summer.
+
+To facilitate the testing our baseline recommendation we will be using k-fold crossvalidation for **Collaborative Filtering Techniques For Recommendation**
+
+
+
+```{r warning=FALSE, comment=FALSE, message=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=150)}
+knitr::opts_chunk$set(message = FALSE, echo=TRUE)
+
+# To load survey data from googlesheets
+suppressWarnings(suppressMessages(library(googlesheets)))
+# Library for loading CSV data
+library(RCurl)
+# Library for data tidying
+library(tidyr)
+# Library for data structure operations 
+library(dplyr)
+library(knitr)
+# Library for plotting
+library(ggplot2)
+# Library for data display in tabular format
+library(DT)
+library(pander)
+
+suppressWarnings(suppressMessages(library(recommenderlab)))
+
+
+```
+
+### Loading The IceCream Survey Data
+
+The YumYum IceCream  Shop has created a survey for the regular kids to rate their flavors.
+
+Here is the survey link:
+
+https://docs.google.com/forms/d/e/1FAIpQLSdk2Xgop-XCcTXR2XEQW3pFV9l0e_VjBFMjTWvX1ttqK3fMZg/viewform
+
+The responses from survey can be found here :
+
+https://docs.google.com/spreadsheets/d/1IKwsU5KjG6Y00Cg5F2ZDCUUYuqjPw8tG67ql3sDqIvc/edit?usp=sharing
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+# Loading data from googlesheets, first finding the relevant sheet , reading the sheet and relevant worksheet
+
+gs_ls()
+icedata.url <- gs_title("YumYumSummer")
+icedata.csv <- gs_read_csv(ss=icedata.url, ws = "Summer")
+
+# convert to data.frame
+icedata <- as.data.frame(icedata.csv)
+
+
+# Verifying records and variables
+
+nrow(icedata)
+ncol(icedata)
+
+#datatable(icedata)
+
+```
+
+*********
+
+### Data Exploration 
+
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+
+icedataorig <- icedata
+icedata<-icedata %>% select( -Timestamp, -Name)
+
+
+# creating test and traing dataset by randomly excluding some of the rating items from icedata
+
+
+#class(icedata)
+
+icemat <- as(as.matrix(icedata), "realRatingMatrix")
+#class(icemat)
+
+icer <- nrow(icemat)
+icec <- ncol(icemat)
+
+
+
+```
+
+
+### IceCream Survey Data   
+
+**Original IceCream Survey Data**
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+datatable(icedata)
+```
+
+*********
+
+
+### Exploring similarity between kids choices/favourites
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+alike_kids <- similarity(icemat[1:icer, ], method =
+"cosine", which = "users")
+
+datatable(as.matrix(alike_kids))
+
+image(as.matrix(alike_kids), main = "HeatMap : Kids Comparable")
+
+```
+
+********
+
+### Exploring similarity between icecream flavors
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+alike_ice <- similarity(icemat[,1:icec ], method =
+"cosine", which = "items")
+
+datatable(as.matrix(alike_ice))
+
+image(as.matrix(alike_ice), main = "HeatMap : IceCreams Comparable")
+
+
+```
+
+
+### Exploring The Most Sold/Bought IceCream Flavor
+
+NuttyButterScoth and NuttyExpresso seem to be the most bought flavors.
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+buys_each_icecream <- colCounts(icemat)
+
+min_no_flavor_rated <- min(rowCounts(icemat))
+
+
+#Then, we can sort the icecream buy counts by number of views:
+table_buys <- data.frame(icecreamflavor = names(buys_each_icecream),buys = buys_each_icecream
+)
+
+table_buys <- table_buys[order(table_buys$buys, decreasing =
+TRUE), ]
+
+ggplot(table_buys[1:25, ], aes(x = icecreamflavor, y = buys, col=icecreamflavor, fill=icecreamflavor)) +
+geom_bar(stat="identity") + theme(axis.text.x =
+element_text(angle = 45, hjust = 1)) + ggtitle("Number of buys
+of the icecream flavors")
+
+```
+
+
+
+### Exploring The Ratings
+
+The most given rating by kids are 4, so we see on average the kids if happy are rating generously.
+Although we do see some exceptions about some kids like Dino and Toto rating very low on average.
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+vratings <- as.vector(icemat@data)
+vratings <- vratings[vratings != 0]
+
+
+tabratings <- table(vratings)
+pander(tabratings, caption="Unique Ratings Frequency Table ")
+#####
+qplot(factor(vratings), col= factor(vratings), fill=factor(vratings)) + ggtitle("Histogram Ratings")
+
+
+
+```
+
+
+### Average Ratings For IceCream Flavors
+
+We find that Chocolate Almond has the highest average rating followed by DiveInChocolate, NuttyExpresso and OrangeVanilla
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+avgratings <- colMeans(icemat@data,na.rm=TRUE)
+
+table_avgrate <- data.frame(icecreamflavor = names(avgratings),avgrate = avgratings)
+
+ggplot(table_avgrate[1:25, ], aes(x = icecreamflavor, y = avgrate, col=icecreamflavor, fill=icecreamflavor)) +
+geom_bar(stat="identity") + theme(axis.text.x =
+element_text(angle = 45, hjust = 1)) + ggtitle("Avg Rating IceCream Flavors")
+
+```
+
+
+### Using k-fold To Validate Models
+
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+# Since the minimum flavors rated by the child is 6, we keep 5 as the items to keep for training 
+
+# we will define how many chunks we want. The argument is k (defined by n_fold below), like the number of repetitions
+set.seed(101)
+
+n_fold <- 5              # k value for k fold cross validation
+items_to_keep <- 5       # Items to consider in training set
+rating_threshold <- 3.5 # Considering a rating of 3.5 as good rating across all flavors.
+
+eval_sets <- evaluationScheme(data = icemat, 
+                              method = "cross-validation",
+                              k = n_fold, 
+                              given = items_to_keep, 
+                              goodRating = rating_threshold)
+
+
+
+eval_sets
+evaltrain <- getData(eval_sets, "train")   # training set
+evalknown <- getData(eval_sets, "known")   # known test set
+evalunknown <- getData(eval_sets, "unknown") # unknown test set
+
+
+
+
+```
+
+
+********
+
+### Creating Models {.tabset}
+
+The functions in the recommenderlab package automatically mean-center data and calculate similarities (using the specified method). Many of the functions in the package take inputs of the class realRatingMatrix -- for this reason, the raw dataset of icecream data is utilized.
+
+
+For each of the models built below we try to find the ratings for 3 flavors to be recommended and compare them to arrive at the RMSE for the model
+
+#### Model 1 : IBCF-Cosine
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+#First, let's prepare the data for validation, as shown in the previous section. Since #the k-fold is the most accurate approach, we will use it here:
+
+model_to_evaluate <- "IBCF"
+model_parameters <- list(method = "Cosine")
+
+
+model1_IBCF_cosine <- Recommender(data = evaltrain, method = model_to_evaluate, parameter = model_parameters)
+
+items_to_recommend <- 3
+
+model1_prediction <- predict(object = model1_IBCF_cosine, newdata = evalknown, n = items_to_recommend, type = "ratings")
+
+
+model1_accuracy <- calcPredictionAccuracy(x = model1_prediction, data = evalunknown, byUser = FALSE)
+model1_accuracy
+
+
+```
+
+
+
+#### Model 2 : IBCF-Pearson 
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+model_to_evaluate <- "IBCF"
+model_parameters <- list(method = "pearson")
+
+
+model2_IBCF_pearson <- Recommender(data = evaltrain, method = model_to_evaluate, parameter = model_parameters)
+
+items_to_recommend <- 3
+
+model2_prediction <- predict(object = model2_IBCF_pearson, newdata = evalknown, n = items_to_recommend, type = "ratings")
+
+model2_accuracy <- calcPredictionAccuracy(x = model2_prediction, data = evalunknown, byUser = FALSE)
+model2_accuracy
+```
+
+
+
+
+
+#### Model 3 : UBCF-Cosine
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+model_to_evaluate <- "UBCF"
+model_parameters <- list(method = "cosine")
+
+
+model3_UBCF_cosine <- Recommender(data = evaltrain, method = model_to_evaluate, parameter = model_parameters)
+
+items_to_recommend <- 3
+
+model3_prediction <- predict(object = model3_UBCF_cosine, newdata = evalknown, n = items_to_recommend, type = "ratings")
+
+model3_accuracy <- calcPredictionAccuracy(x = model3_prediction, data = evalunknown, byUser = FALSE) # byUser =FALSE for model level performance metrics
+model3_accuracy
+```
+
+
+
+#### Model 4 :  UBCF-Pearson
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+model_to_evaluate <- "UBCF"
+model_parameters <- list(method = "pearson")
+
+
+model4_UBCF_pearson <- Recommender(data = evaltrain, method = model_to_evaluate, parameter = model_parameters)
+
+items_to_recommend <- 2
+
+model4_prediction <- predict(object = model4_UBCF_pearson, newdata = evalknown, n = items_to_recommend, type = "ratings")
+
+model4_accuracy <- calcPredictionAccuracy(x = model4_prediction, data = evalunknown, byUser = FALSE) # byUser =FALSE for model level performance metrics
+model4_accuracy
+```
+
+
+
+
+#### Model 5 : Popular Items
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+model_to_evaluate <- "POPULAR"
+model_parameters <- list(method = "POPULAR")
+
+
+model5_popular <- Recommender(data = evaltrain, method = model_to_evaluate, parameter = model_parameters)
+
+items_to_recommend <- 3
+
+model5_prediction <- predict(object = model5_popular, newdata = evalknown, n = items_to_recommend, type = "ratings")
+
+model5_accuracy <- calcPredictionAccuracy(x = model5_prediction, data = evalunknown, byUser = FALSE) # byUser =FALSE for model level performance metrics
+model5_accuracy
+```
+
+
+### Model Accuracy Comparison
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+modelaccuracycomp <- rbind(model1_accuracy,model2_accuracy,model3_accuracy,model4_accuracy, model5_accuracy)%>% round(2)
+
+comptable <- cbind(modelaccuracycomp)
+
+rownames(comptable) <- c("IBCF_Cosine", "IBCF_Pearson", "UBCF_Cosine", "UBCF_Pearson","Popular")
+colnames(comptable) <- c( "RMSE","MSE","MAE")
+
+pander(comptable,caption = 'Model Comparison')
+
+
+```
+
+
+
+### Comparing Models With Varying Values Of Recommendation
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE, results=FALSE}
+
+
+
+# Evaluating different models, we can define a list with them
+# We add random and popular to the model methods of evaluation in this comparison
+
+models_to_evaluate <- list(
+IBCF_cos = list(name = "IBCF", param = list(method =
+"cosine")),
+IBCF_pearson = list(name = "IBCF", param = list(method =
+"pearson")),
+UBCF_cos = list(name = "UBCF", param = list(method =
+"cosine")),
+UBCF_pearson = list(name = "UBCF", param = list(method =
+"pearson")),
+random = list(name = "RANDOM", param=NULL),
+pop = list(name = "POPULAR", param=NULL)
+)
+
+# In order to evaluate the models properly, we need to test them, varying the number of flavors , as follows
+n_recommendations <- c(1, 3, 5, 7, 10, 12, 15)
+
+list_results <- evaluate(x = eval_sets, method = models_to_evaluate, n= n_recommendations, type="topNList")
+
+
+plot(list_results, annotate = 1, legend = "topleft") 
+title("ROC curve")
+
+
+listerror <- evaluate(x = eval_sets, method = models_to_evaluate, type="ratings")
+modelcomp <- as.data.frame(sapply(avg(listerror),rbind))
+modelcompnew <- as.data.frame(t(as.matrix(modelcomp)))
+colnames(modelcompnew) <- c("RMSE","MSE","MAE")
+
+
+```
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+pander(modelcompnew, caption="Model Comparison Based On Varying Recommendation")
+```
+
+
+
+### Model Selection
+
+
+**From the ROC Plot**
+
+We find that the Area Under Curve for UBCF Cosine method is the most , as apparent.
+
+**From RMSE Comparison Tables**
+
+Also from the comparison of the calculated accuracy i.e the RMSE values, we find that UBCF Cosine i.e. the User Based Collborative Filtering With Cosine Similarity gives the best RMSE value (i.e. lowest value) and hence we use it to make recommendations for the kids next flavors to try. We use the model 3 (model3_UBCF_cosine) built above to get the recommendations.
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+#Getting Top 3 Recommendations for All The Kids 
+recomAll <- predict(model3_UBCF_cosine, icemat[1:14], n=3)
+recomAll
+
+
+recdf <- as.data.frame(as(recomAll, "list"))
+recdf <- as.data.frame(t(as.matrix(recdf)))
+
+rownames(recdf) <- icedataorig$Name
+colnames(recdf) <- c("Flavor 1","Flavor 2", "Flavor 3")
+```
+
+### YumYum Icecream Recommends !
+
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+pander(recdf, caption="Special Flavors For You This Summer!!")
+
+```
+
+*******
