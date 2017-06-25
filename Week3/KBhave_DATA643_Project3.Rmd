@@ -1,0 +1,528 @@
+---
+title: "Matrix Factorization"
+author: "Kumudini Bhave"
+date: "June 21, 2017"
+output:
+  html_document:
+    fontsize: 17pt
+    highlight: pygments
+    theme: cerulean
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+---
+
+     
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+*******
+
+# **Matrix Factorization With SVD**
+
+********
+
+## Summary
+
+
+This is an R Markdown document for performing analysis of icecream ratings by little kids and to recommend the new / untried flavors to them this summer. We explore the **Matrix Factorization Techniques For Recommendation Systems**. We do this factorization using **Singular Value Decomposition.**
+
+
+```{r warning=FALSE, comment=FALSE, message=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=150)}
+knitr::opts_chunk$set(message = FALSE, echo=TRUE)
+
+# To load survey data from googlesheets
+suppressWarnings(suppressMessages(library(googlesheets)))
+# Library for loading CSV data
+library(RCurl)
+# Library for data tidying
+library(tidyr)
+# Library for data structure operations 
+library(dplyr)
+library(knitr)
+# Library for plotting
+library(ggplot2)
+# Library for data display in tabular format
+library(DT)
+library(pander)
+
+
+library(Matrix)
+suppressWarnings(suppressMessages(library(recommenderlab)))
+
+
+```
+
+### Loading The IceCream Survey Data
+
+The YumYum IceCream  Shop has created a survey for the regular kids to rate their flavors.
+
+Here is the survey link:
+
+https://docs.google.com/forms/d/e/1FAIpQLSdk2Xgop-XCcTXR2XEQW3pFV9l0e_VjBFMjTWvX1ttqK3fMZg/viewform
+
+The responses from survey can be found here :
+
+https://docs.google.com/spreadsheets/d/1IKwsU5KjG6Y00Cg5F2ZDCUUYuqjPw8tG67ql3sDqIvc/edit?usp=sharing
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+# Loading data from googlesheets, first finding the relevant sheet , reading the sheet and relevant worksheet
+
+gs_ls()
+icedata.url <- gs_title("YumYumSummer")
+icedata.csv <- gs_read_csv(ss=icedata.url, ws = "Summer")
+
+# convert to data.frame
+icedata <- as.data.frame(icedata.csv)
+
+
+# Verifying records and variables
+
+nrow(icedata)
+ncol(icedata)
+
+#datatable(icedata)
+
+```
+
+*********
+
+### Data Exploration 
+
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+
+icedataorig <- icedata
+icedata<-icedata %>% select( -Timestamp, -Name)
+
+
+# creating test and traing dataset by randomly excluding some of the rating items from icedata
+
+
+#class(icedata)
+
+icemat <- as(as.matrix(icedata), "realRatingMatrix")
+#class(icemat)
+     
+icer <- nrow(icemat)
+icec <- ncol(icemat)
+rownames(icemat) <- icedataorig$Name
+#colnames(icemat)
+
+```
+
+
+### Helper Functions {.tabset}
+
+#### Function : Print Matrix 
+
+We use this function to print the matrix elements
+It takes as input matrix whose elements are to be printed.
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+# Func tion to print matrix
+# @param1 matrix
+
+
+printmat <- function(matrixA)
+{
+    
+     # dimension of matrix
+       dimrow <- nrow(matrixA)
+       dimcol <- ncol(matrixA)
+
+     # Looping through the matrixA 
+       for(i in 1:dimrow)
+     {
+            for(j in 1:dimcol)
+            {
+                 cat(" " ,matrixA[i,j], " ")
+            }                 # end of inner for loop
+            
+           cat("\n")          # Begin on next line after every row of matrix printed 
+       
+       }                      # end of outer for loop
+       
+       
+   
+}
+```
+
+
+
+
+#### Function : Dimensionality Reduction Threshold *k*
+
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+findk <- function(matrixA)
+{
+    
+
+    # dimension of matrix
+    dimrow <- nrow(matrixA)
+    dimcol <- ncol(matrixA)
+    
+    sumsq <- 0
+    
+    k <- 0
+     
+     # Looping through the matrixA for calculating Sum of Squares 
+     # of diagonal elements of matrix Sigma
+       for(i in 1:dimrow)
+     {
+            for(j in 1:dimcol)
+            {
+                 if (i == j)  # if it is a diagonal element, as this function would be  
+                 {            # called for diagonal matrix Sigma
+                      # Square the diagonal elements and sum them
+                      sumsq <- sumsq + (as.numeric(matrixA[i,j])) *  (as.numeric(matrixA[i,j]))
+                 }
+            } # end of inner for loop
+       } # end of outer for loop
+       
+     
+     ninetysumsq <- .9 * sumsq
+     
+     newsumsq <- 0
+     
+     # Looping through the matrixA again for calculating 90 % Sum of Squares 
+     # of diagonal elements of matrix Sigma and thereby the k th value.
+     
+     for(i in 1:dimrow)
+     {
+            for(j in 1:dimcol)
+            {
+                 if ((i == j))
+                 {
+                      
+                      newsumsq <- newsumsq + (as.numeric(matrixA[i,j])) * (as.numeric(matrixA[i,j]))
+                      if((ninetysumsq < newsumsq ))
+                      {
+                        k <- i # return the value of i , at the first instance when 90% of sum of                                 # squares value is reached.
+                       return (k)
+                      }
+                 }
+            } # end of inner for loop
+       } # end of outer for loop
+       
+     return (k)
+     
+}
+```
+
+#### Function : Calculate Frobenius Norm*
+
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+calcFN <- function(matrixA, matrixAnew)
+{
+     # dimension of matrix
+       dimrow <- nrow(matrixA)
+       dimcol <- ncol(matrixA)
+
+       elemsqtot <- 0
+            
+     # Looping through the matrixA 
+       for(i in 1:dimrow)
+     {
+            for(j in 1:dimcol)
+            {
+                 elemdiff <- matrixA[i,j] - matrixAnew[i,j]  # Difference in elements
+                 elemdiffsq <- elemdiff^2                   # Square the difference
+                 elemsqtot <- elemsqtot + elemdiffsq        # Add the difference
+                 
+            }                 # end of inner for loop
+           
+       }                      # end of outer for loop
+       
+       return (sqrt(elemsqtot))
+   
+}
+    
+```
+
+ 
+ 
+ 
+### Performing SVD
+
+We perform SVD on the IceCream dataset, by breaking the $ m * n $ matrix $A$ into $m * k$ matrix $U$ and a $k * n$ matrix $V$
+
+
+$$A = U \ \Sigma \ V^T$$
+
+We start by first normalizing the dataset. We then input this to the svd function and gather the  matrices $U$, $\Sigma$, $V$.
+
+$\Sigma$ is a diagonal matrix. 
+The SVD involves computational overhead. Hence for larger datasets, one can overcome the computational overhead by reducing the dimensions. For this one needs to determine , the number of singular values $k$.
+
+
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+# We normalize the data
+
+ice_norm <- normalize(icemat) 
+#ice_norm <- data.frame(scale(as.data.frame(icemat), center=T, scale=T))
+
+system.time(ice_svd <- svd(ice_norm@data))
+
+summary(ice_svd)
+
+
+#class(ice_norm@data)
+
+# We perform Singular Value Decomposition on the data matrix
+# And retrieve the singular matrices,
+
+# Diagonal MAtrix Sigma
+Sigma <- ice_svd$d
+Sigma.mat <- Sigma %>% diag()
+dim(Sigma.mat)
+
+
+
+#Left Singular MAtrix U
+U <- ice_svd$u
+dim(U)
+# Right Singular MAtrix V, derived from V Transpose obtained from svd function
+V <- t(as.matrix(ice_svd$v))
+dim(V)
+dim(ice_svd$v)
+#Printing matrix
+kable(U)
+
+kable(V)
+
+kable(diag(Sigma))
+
+```
+
+
+### Dimensionality Reduction
+
+Here we identify the $k$ , through the function *findk()*. We reduce the dimensions of matrices $U$, $V$ to $m * k$ and $k * n$ respectively. We reduces the diagonal matrix $\Sigma$ to be of $k * k$.
+
+We then compute the $$A = U_k \ \Sigma_k \ V^T_k$$
+
+Modifying /Reducing the dimensions of U and V and Sigma matrices accordingly,
+
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+# Find the value for k , so as to know how many singular values to keep
+k <- findk(Sigma.mat)
+k
+
+
+     
+# Modifying /Reducing the dimensions of U and V and Sigma matrices accordingly
+    
+#This matrix should be m x k.
+U.dr <- U[,1:k]
+dim(U.dr)
+
+#This matrix should be k x n.
+V.dr <- V[1:k,]
+dim(V.dr)
+
+
+
+#The new Singular diagonal matrix Sigma.dr
+
+# Reducing the Sigma matrix
+Sigma.dr <- Sigma.mat[1:k, 1:k]
+dim(Sigma.dr)
+
+#Check
+#sum(Sigma.dr^2)/sum(Sigma.mat^2) #0.9
+
+
+predicted <- U.dr %*% Sigma.dr %*% V.dr
+dim(predicted)
+
+colnames(predicted)<-colnames(icemat)
+rownames(predicted)<-rownames(icemat)
+
+```
+
+
+### Matrices Comparison  {.tabset}
+
+#### Predicted
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+kable(predicted)
+#class(predicted)
+predicted <- as(predicted, "matrix")
+```
+
+#### Original normalized
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+kable(as.matrix(ice_norm@data))
+
+```
+
+#### Original Ratings
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+kable(as.matrix(icemat@data))
+
+
+
+```
+
+
+
+
+### Calculate Frobenius Norm
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+icematx <- as.matrix(icemat@data)
+
+
+calcFN(icematx,predicted)
+
+
+```
+
+******
+
+
+### Calculate RMSE
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+calcRMSE <- function(predictedM, origM){
+  return (sqrt(mean((predictedM - origM)^2, na.rm=T)))
+}
+
+calcRMSE(predicted, icematx)
+
+```
+
+### Prediction for new kid ratings 
+
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+# Querying for recommendations for a new kid on the block
+icecreamflav <- colnames(predicted)
+noofflav <- length(icecreamflav)
+
+querynew <- rep(0, noofflav)
+querynew[which(icecreamflav == "DiveInChocolate")] <- 5
+querynew[which(icecreamflav == "NuttyExpresso")] <- 4
+querynew[which(icecreamflav == "MochaShot")] <- 4
+querynew[which(icecreamflav == "IrishCoffee")] <- 5
+
+# Performing qV for concept
+
+qvconcept <- querynew %*% t(V.dr)
+
+# To get the recommendations
+
+recom <- colMeans(icematx) + qvconcept %*% V.dr
+
+colnames(recom) <- colnames(predicted)
+
+recom
+
+#predictedRRM <- as(predicted, "realRatingMatrix")
+#calcPredictionAccuracy(x = predictedRRM, data = ice_norm, byUser = FALSE)
+
+
+```
+
+*Predictionfor new kid ratings *
+
+The new kid with preferences for DiveInChocolate , NuttyExpresso, MochaShot ,IrishCoffee
+
+`r querynew` 
+
+would like the flavors to this extent 
+`r kable(recom)`
+
+
+
+
+
+
+### Using *irlba*
+
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+
+library(irlba)
+min(ncol(ice_norm@data))
+
+system.time(ice_svdirlba <- irlba::irlba(ice_norm@data, nu = 6, nv = 6 ))
+
+summary(ice_svdirlba)
+
+Sigma1 <- ice_svdirlba$d
+dim(Sigma1)
+U1 <- ice_svdirlba$u
+dim(U1)
+V1 <- t(as.matrix(ice_svdirlba$v))
+dim(V1)
+
+
+
+#Printing matrix
+#printmat(U1)
+#printmat(V1)
+#print(Sigma1)
+
+# Checking if if we get exact same decomposition through different packages, methods
+identical(Sigma,Sigma1)
+
+
+```
+
+We find that the U, V obtained are different in the sense not exactly matching element to element  through *irlba* and through *svd* functions, but are more or less similar.
+
+*********
+
+
+
+### Decomposed matrices {.tabset}
+
+#### SVD
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+pander(U.dr, caption = "Decomposed matrices with SVD ")
+pander(V.dr, caption="Decomposed matrices with SVD ")
+pander(Sigma.dr)
+```
+
+#### irlba
+```{r  warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80),echo=TRUE}
+
+par(mfrow=c(1,2))
+pander(U1, caption="Decomposed matrices with SVD ")
+pander(V1, caption="Decomposed matrices with SVD ")
+pander(diag(Sigma1))
+
+```
+
