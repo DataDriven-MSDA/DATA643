@@ -1,0 +1,44 @@
+---
+title: "KBhave_Discussion3.Rmd"
+author: "Kumudini Bhave"
+date: "June 28, 2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+*******
+
+
+# Overview
+Evan Estola, who works at Meetup talks about the algorithms recommends and the tradeoff with sensitivity goes for a toss.
+
+*******
+
+## Points He Makes
+
+1. How data science is the essence on everday living, impacting thoughts /minds, habits, decisions, conscious as well as subconscious.
+
+2. The driving force for ths bias in recommendations is the underlying human thought process, preconceived notions/socio-economic beliefs, personal impact etc, bottomline the human mind at work that drives artificial intelligence.
+
+3. The  eagerness of profit making as well as muscle power of position ( self - assuming )leads to complex, immoral pointers rather than simple unprejudiced recommendations.
+
+4. Example : With many a high C list jobs are assumed to be stated/advertised for men 
+
+Some example show as so fundamentally crippled , that a simple search like a beautiful child face would point to 95% of fair face as opposed to a dark skinned one.( Sad as much as it  being true) 
+
+ 
+*******
+
+## Inference :
+
+ Simplicity should be weighed in , ethics should be the firm base for any recommender system and recommendations should be verified against the ethical rules setup before recommendations are made.
+we live/breathe/thrive in a society where bias can be challenged / overridden by contribution starting at self level (community as well as work level)
+
+
+*********
