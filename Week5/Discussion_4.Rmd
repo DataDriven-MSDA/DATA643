@@ -3,8 +3,8 @@ title: "KBhave_Discussion4.Rmd"
 author: "Kumudini Bhave"
 date: "July 12, 2017"
 output:
-  html_document: default
   pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
